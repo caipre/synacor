@@ -72,15 +72,19 @@ class SynacorVM(object):
         self.ops = {op: self.__getattribute__(op.name) for op in Opcode}
 
     @staticmethod
-    def addr(x):
-        s = hex(x)
+    def hex_and_char(x):
+        s = '{:#06x}'.format(x)
         if 0x20 <= x <= 0x7e:
             s += " '" + chr(x) + "'"
         return s
 
     def dump(self, code, *args):
-        print("{:#x} {:7} {}".format(
-            self.ip - len(args) - 1, code.name, ' '.join(map(SynacorVM.addr, args))))
+        print('{ip:#05x} [{reg}] {op:7} {args} <{stack}>'.format(
+            ip=self.ip - 1,
+            reg=' '.join(map(SynacorVM.hex_and_char, self.reg.values())),
+            op=code.name,
+            args=' '.join(map(SynacorVM.hex_and_char, args)),
+            stack=' '.join(map(SynacorVM.hex_and_char, self.stack))))
 
     def load(self, path):
         with open(path, 'rb') as f:
@@ -89,13 +93,8 @@ class SynacorVM(object):
         for v, in struct.iter_unpack('<H', data):
             self.mem.append(v)
 
-    def fadv(self):
-        val = self.fetch()
-        self.advance()
-        return val
-
-    def fetch(self):
-        return self.mem[self.ip]
+    def fetch(self, offset=0):
+        return self.mem[self.ip + offset]
 
     def decode(self, inst):
         for code in Opcode:
@@ -115,15 +114,21 @@ class SynacorVM(object):
 
     def run(self):
         while not self.halt:
-            args = []
-
             inst = self.fetch()
             code = self.decode(inst)
             self.advance()
 
-            args = [ self.fadv() for _ in range(Opcode.args_for(code)) ]
+            args = [ self.fetch(i) for i in range(Opcode.args_for(code)) ]
+
             self.dump(code, *args)
+
             self.ops[code](*args)
+
+            if code in [Opcode.op_jmp, Opcode.op_jt, Opcode.op_jf]:
+                continue
+
+            for _ in range(Opcode.args_for(code)):
+                self.advance()
 
     def is_reg(self, addr):
         return SynacorVM.INT_MAX < addr <= SynacorVM.REG_MAX
