@@ -102,7 +102,7 @@ class SynacorVM(object):
                 return code
         assert False, 'invalid instruction: {:#x}'.format(inst)
 
-    def set_pc(self, to=None):
+    def set_ip(self, to=None):
         if to is None:
             to = self.ip + 1
         assert 0 <= to < len(self.mem), 'ip out of bounds: {:#x}'.format(to)
@@ -110,7 +110,7 @@ class SynacorVM(object):
         return self.mem[self.ip]
 
     def advance(self, by=1):
-        return self.set_pc(self.ip + by)
+        return self.set_ip(self.ip + by)
 
     def run(self):
         while not self.halt:
@@ -124,26 +124,24 @@ class SynacorVM(object):
 
             self.ops[code](*args)
 
+            # jumps manage ip themselves
             if code in [Opcode.op_jmp, Opcode.op_jt, Opcode.op_jf]:
                 continue
 
-            for _ in range(Opcode.args_for(code)):
-                self.advance()
+            # call and ret manage ip themselves
+            if code in [Opcode.op_call, Opcode.op_ret]:
+                continue
+
+            self.advance(Opcode.args_for(code))
 
     def is_reg(self, addr):
         return SynacorVM.INT_MAX < addr <= SynacorVM.REG_MAX
 
     def dereg(self, addr):
         if self.is_reg(addr):
-            return self.get(addr)
-        else:
-            return addr
-
-    def get(self, addr):
-        if self.is_reg(addr):
             return self.reg[addr]
         else:
-            return self.mem[addr]
+            return addr
 
     def set(self, addr, val):
         if self.is_reg(addr):
@@ -178,29 +176,33 @@ class SynacorVM(object):
 
     def op_jmp(self, dst):
         dst = self.dereg(dst)
-        self.ip = dst
+        self.set_ip(dst)
 
     def op_jt(self, val, dst):
         val = self.dereg(val)
         dst = self.dereg(dst)
         if val != 0:
-            self.ip = dst
+            self.set_ip(dst)
+        else:
+            self.advance(2)
 
     def op_jf(self, val, dst):
         val = self.dereg(val)
         dst = self.dereg(dst)
         if val == 0:
-            self.ip = dst
+            self.set_ip(dst)
+        else:
+            self.advance(2)
 
     def op_add(self, dst, left, right):
         left = self.dereg(left)
         right = self.dereg(right)
-        self.set(dst, (left + right) % SynacorVM.INT_MAX)
+        self.set(dst, (left + right) % (SynacorVM.INT_MAX + 1))
 
     def op_mult(self, dst, left, right):
         left = self.dereg(left)
         right = self.dereg(right)
-        self.set(dst, (left * right) % SynacorVM.INT_MAX)
+        self.set(dst, (left * right) % (SynacorVM.INT_MAX + 1))
 
     def op_mod(self, dst, left, right):
         left = self.dereg(left)
@@ -223,18 +225,19 @@ class SynacorVM(object):
 
     def op_rmem(self, dst, src):
         src = self.dereg(src)
-        self.set(dst, src)
+        self.set(dst, self.mem[src])
 
     def op_wmem(self, dst, src):
+        dst = self.dereg(dst)
         src = self.dereg(src)
         self.set(dst, src)
 
     def op_call(self, fn):
         self.stack.append(self.ip + 1)
-        self.ip = fn
+        self.ip = self.dereg(fn)
 
     def op_ret(self):
-        self.ip = self.stack.pop()
+        self.set_ip(self.stack.pop())
 
     def op_out(self, c):
         #print(chr(c), end='')
