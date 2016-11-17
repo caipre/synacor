@@ -244,6 +244,7 @@ class SynacorVM(object):
             self.set_ip(self.stack.pop())
 
     def op_out(self, c):
+        c = self.dereg(c)
         print(chr(c), end='')
         pass
 
