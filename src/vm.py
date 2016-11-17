@@ -120,7 +120,7 @@ class SynacorVM(object):
 
             args = [ self.fetch(i) for i in range(Opcode.args_for(code)) ]
 
-            self.dump(code, *args)
+            #self.dump(code, *args)
 
             self.ops[code](*args)
 
@@ -154,6 +154,7 @@ class SynacorVM(object):
 
     def op_set(self, reg, val):
         assert self.is_reg(reg)
+        val = self.dereg(val)
         self.reg[reg] = val
 
     def op_push(self, val):
@@ -237,13 +238,17 @@ class SynacorVM(object):
         self.ip = self.dereg(fn)
 
     def op_ret(self):
-        self.set_ip(self.stack.pop())
+        if not self.stack:
+            self.halt = True
+        else:
+            self.set_ip(self.stack.pop())
 
     def op_out(self, c):
-        #print(chr(c), end='')
+        print(chr(c), end='')
         pass
 
     def op_in(self, dst):
+        dst = self.dereg(dst)
         s = input('synacor.vm: ')
         for c in map(ord, s):
             self.set(dst, c)
