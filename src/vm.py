@@ -40,15 +40,46 @@ class SynacorVM(object):
 
         self.memory = [word for word, in struct.iter_unpack('<H', program)]
 
+    @staticmethod
+    def hex_and_chr(num):
+        str = '{:#06x}'.format(num)
+        if 0x20 <= num <= 0x7e:
+            str += " {}".format(chr(num))
+        return str
+
+    def disassemble(self):
+        iptr = 0
+        while iptr < len(self.memory):
+            code = self.memory[iptr]
+            iptr += 1
+
+            name = 'unknown'
+            if 0 <= code <= 21:
+                name = self.ops[code].__name__
+
+            argc = 0
+            if code in (0, 18, 21):
+                argc = 0
+            elif code in (2, 3, 6, 17, 19, 20):
+                argc = 1
+            elif code in (1, 7, 8, 14, 15, 16):
+                argc = 2
+            elif code in (4, 5, 9, 10, 11, 12, 13):
+                argc = 3
+
+            print('{addr:#06x} {name:<7} {args}'.format(
+                addr=iptr,
+                name=name,
+                args=' '.join(
+                    map(self.hex_and_chr, [self.memory[iptr+i] for i in range(argc)]))
+            ))
+
+            iptr += argc
+
     def run(self):
         iptr = 0
         while True:
             code = self.memory[iptr]
-            #print(
-            #    hex(iptr),
-            #    self.ops[code].__name__,
-            #    ' '.join(map(hex, self.memory[iptr:iptr+3])),
-            #    ' '.join(map(hex, self.registers.values())))
             iptr = self.ops[code](iptr)
             if iptr == 0: break
 
@@ -191,4 +222,4 @@ if __name__ == '__main__':
 
     vm = SynacorVM()
     vm.load(program)
-    vm.run()
+    vm.disassemble()
