@@ -5,6 +5,7 @@ import sys
 
 class SynacorVM(object):
     def __init__(self):
+        self.debug = False
         self.memory = [0 for _ in range(2 ** 15)]
         self.registers = {i: 0 for i in range(32768, 32776)}
         self.stack = []
@@ -44,15 +45,17 @@ class SynacorVM(object):
     def hex_and_chr(num):
         str = '{:#06x}'.format(num)
         if 0x20 <= num <= 0x7e:
-            str += " {}".format(chr(num))
+            str += " '{}'".format(chr(num))
         return str
 
     def disassemble(self):
         iptr = 0
         while iptr < len(self.memory):
-            code = self.memory[iptr]
-            iptr += 1
+            argc = self.dump(iptr)
+            iptr += 1 + argc
 
+    def dump(self, iptr):
+            code = self.memory[iptr]
             name = 'unknown'
             if 0 <= code <= 21:
                 name = self.ops[code].__name__
@@ -67,18 +70,23 @@ class SynacorVM(object):
             elif code in (4, 5, 9, 10, 11, 12, 13):
                 argc = 3
 
-            print('{addr:#06x} {name:<7} {args}'.format(
-                addr=iptr,
-                name=name,
-                args=' '.join(
-                    map(self.hex_and_chr, [self.memory[iptr+i] for i in range(argc)]))
+            print('\n{reg}\n'
+                  '{addr:#06x} {name:<7} {args}\n'
+                  .format(
+                    reg=' '.join(map(self.hex_and_chr, self.registers.values())),
+                    addr=iptr,
+                    name=name,
+                    args=' '.join(
+                        map(self.hex_and_chr, [self.memory[iptr+i] for i in range(argc)]))
             ))
 
-            iptr += argc
+            return argc
 
     def run(self):
         iptr = 0
         while True:
+            if self.debug:
+                self.dump(iptr)
             code = self.memory[iptr]
             iptr = self.ops[code](iptr)
             if iptr == 0: break
@@ -86,7 +94,8 @@ class SynacorVM(object):
     def getmem(self, address):
         val = self.memory[address]
         if val >= 32768:
-            return self.registers[val]
+            if self.registers[0x8007] != 0: self.debug = False
+            val = self.registers[val]
         return val
 
     def setmem(self, address, val):
@@ -206,11 +215,9 @@ class SynacorVM(object):
         return address + 2
 
     def op_in(self, address):
-        #a = self.getmem(address + 1)
-        #s = input('synacor.vm: ') + '\n'
-        #for i, c in enumerate(map(ord, s)):
-        #    self.memory[a + i] = c
         s = sys.stdin.read(1)
+        if s == '%':
+            self.registers[0x8007] = 0x1
         self.setmem(address + 1, ord(s))
         return address + 2
 
@@ -220,6 +227,13 @@ class SynacorVM(object):
 if __name__ == '__main__':
     program = sys.argv[1]
 
+    try: cmd = sys.argv[2]
+    except: cmd = 'run'
+
     vm = SynacorVM()
     vm.load(program)
-    vm.run()
+
+    if cmd == 'dis':
+        vm.disassemble()
+    else:
+        vm.run()
