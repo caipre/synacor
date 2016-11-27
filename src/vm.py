@@ -222,4 +222,4 @@ if __name__ == '__main__':
 
     vm = SynacorVM()
     vm.load(program)
-    vm.disassemble()
+    vm.run()
