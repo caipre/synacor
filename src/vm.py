@@ -5,7 +5,10 @@ import sys
 
 class SynacorVM(object):
     def __init__(self):
-        self.debug = False
+        self.input = ''
+        self.calls = {}
+        self.debug_enabled = False
+
         self.memory = [0 for _ in range(2 ** 15)]
         self.registers = {i: 0 for i in range(32768, 32776)}
         self.stack = []
@@ -48,54 +51,71 @@ class SynacorVM(object):
             str += " '{}'".format(chr(num))
         return str
 
-    def disassemble(self):
-        iptr = 0
-        while iptr < len(self.memory):
-            argc = self.dump(iptr)
-            iptr += 1 + argc
+    @staticmethod
+    def argc_for(code):
+        if code in (0, 18, 21):
+            return 0
+        elif code in (2, 3, 6, 17, 19, 20):
+            return 1
+        elif code in (1, 7, 8, 14, 15, 16):
+            return 2
+        elif code in (4, 5, 9, 10, 11, 12, 13):
+            return 3
+        return 0
 
-    def dump(self, iptr):
+    def debug(self, iptr):
             code = self.memory[iptr]
-            name = 'unknown'
             if 0 <= code <= 21:
                 name = self.ops[code].__name__
+                args = [self.memory[iptr+1+i] for i in range(self.argc_for(code))]
+            else:
+                name = hex(code)
+                args = []
 
-            argc = 0
-            if code in (0, 18, 21):
-                argc = 0
-            elif code in (2, 3, 6, 17, 19, 20):
-                argc = 1
-            elif code in (1, 7, 8, 14, 15, 16):
-                argc = 2
-            elif code in (4, 5, 9, 10, 11, 12, 13):
-                argc = 3
 
+            args = ' '.join(map(self.hex_and_chr, args))
             print('\n{reg}\n'
+                  '{stack}\n'
                   '{addr:#06x} {name:<7} {args}\n'
                   .format(
                     reg=' '.join(map(self.hex_and_chr, self.registers.values())),
+                    stack=' '.join(map(self.hex_and_chr, self.stack)),
                     addr=iptr,
                     name=name,
-                    args=' '.join(
-                        map(self.hex_and_chr, [self.memory[iptr+i] for i in range(argc)]))
+                    args=args
             ))
-
-            return argc
 
     def run(self):
         iptr = 0
         while True:
-            if self.debug:
-                self.dump(iptr)
+            if iptr == 0x1571:
+                assert self.registers[0x8007] != 0
+                iptr = 0x157a
             code = self.memory[iptr]
             iptr = self.ops[code](iptr)
             if iptr == 0: break
 
+    def dis(self):
+        iptr = 0
+        while iptr < len(self.memory):
+            code = self.memory[iptr]
+            if 0 <= code <= 21:
+                name = self.ops[code].__name__
+                args = [self.memory[iptr+1+i] for i in range(self.argc_for(code))]
+            else:
+                name = '{:#06x}'.format(code)
+                args = []
+
+            args = ' '.join(map(self.hex_and_chr, args))
+            print('{iptr:#06x} {name:<7} {args}'
+                  .format(iptr=iptr, name=name, args=args))
+
+            iptr += 1 + self.argc_for(code)
+
     def getmem(self, address):
         val = self.memory[address]
         if val >= 32768:
-            if self.registers[0x8007] != 0: self.debug = False
-            val = self.registers[val]
+            return self.registers[val]
         return val
 
     def setmem(self, address, val):
@@ -201,8 +221,12 @@ class SynacorVM(object):
         return address + 3
 
     def op_call(self, address):
+        to = self.getmem(address + 1)
+        try: self.calls[to] += 1
+        except: self.calls[to] = 1
+
         self.stack.append(address + 2)
-        return self.getmem(address + 1)
+        return to
 
     def op_ret(self, address):
         if not self.stack:
@@ -215,10 +239,21 @@ class SynacorVM(object):
         return address + 2
 
     def op_in(self, address):
-        s = sys.stdin.read(1)
-        if s == '%':
-            self.registers[0x8007] = 0x1
+        while not self.input:
+            s = input()
+
+            if s == '.debug':
+                self.debug_enabled = True
+            elif s == '.calls':
+                print(self.calls)
+            elif s == '.interdimensional':
+                self.registers[0x8007] = int(self.interdimensional)
+            else:
+                self.input = s + '\n'
+
+        s = self.input[0]
         self.setmem(address + 1, ord(s))
+        self.input = self.input[1:]
         return address + 2
 
     def op_noop(self, address):
@@ -227,13 +262,7 @@ class SynacorVM(object):
 if __name__ == '__main__':
     program = sys.argv[1]
 
-    try: cmd = sys.argv[2]
-    except: cmd = 'run'
-
     vm = SynacorVM()
+    vm.interdimensional = 1 if len(sys.argv) == 2 else sys.argv[2]
     vm.load(program)
-
-    if cmd == 'dis':
-        vm.disassemble()
-    else:
-        vm.run()
+    vm.run()
